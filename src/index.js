@@ -1,28 +1,24 @@
 import SimpleLightbox from "simplelightbox";
 import "simplelightbox/dist/simple-lightbox.min.css";
 import Notiflix from 'notiflix';
-import { fetchGalleryPhoto, Per_Page} from "./pixabay-api.js";
+import { fetchGalleryPhoto, Per_Page } from "./pixabay-api.js";
 import { createMarkup } from "./templates/pixabay-markup.js";
 
-const formEl=document.querySelector(".search-form");
+const formEl = document.querySelector(".search-form");
 const galleryEl = document.querySelector(".gallery");
 const spanEl = document.querySelector(".js-span");
 const target = document.querySelector(".js-guard");
 
-
-let currentPage =1;
+let currentPage = 1;
 let searchQuery = "";
 let total = 0;
-
-
+let isLoading = false;
 
 formEl.addEventListener("submit", onSearch);
-formEl.addEventListener("change", onChange);
+formEl.addEventListener("input", onInputChange);
 
-function onChange() {
-  
-  return searchQuery = formEl.elements.searchQuery.value.trim(); 
-
+function onInputChange(evt) {
+  searchQuery = evt.target.value.trim(); 
 };
 
 function clearGallery() {
@@ -33,75 +29,68 @@ function clearGallery() {
 };
 
 let options = {
-  root : null,
-  rootMargin : "200px",
-  treshold: 1.0,
+  root: null,
+  rootMargin: "200px",
+  threshold: 1.0,
 };
 
 let observer = new IntersectionObserver(onLoad, options);
-let lightbox = new SimpleLightbox(".gallery a", { captionsData: "alt", captionDelay: 250, captionPosition: "bottom" });
+let lightbox = new SimpleLightbox(".gallery a", {
+  captionsData: "alt",
+  captionDelay: 250,
+  captionPosition: "bottom"
+});
 
 function onSearch(evt) {
-   
   evt.preventDefault();
-
   if (!searchQuery) {
- 
-    Notiflix.Report.warning("please, enter the search word!");
+    Notiflix.Report.warning("Please, enter the search word!");
     return;
   }
-  
-  observer.observe(target);
-
   clearGallery();
+  observer.observe(target);
 };
 
-function onLoad(enries, observer) {
-
-   enries.forEach((entry) =>{
-    if(entry.isIntersecting){         
-
-      getPhotoGallery();  
-     
+function onLoad(entries) {
+  entries.forEach(entry => {
+    if (entry.isIntersecting && !isLoading) {
+      isLoading = true;
+      getPhotoGallery().finally(() => {
+        isLoading = false;
+      });
     }
   });
- 
 };
 
-async function getPhotoGallery() {  
+async function getPhotoGallery() {
+  if (total > 0 && currentPage > Math.ceil(total / Per_Page)) {
+    observer.unobserve(target);
+    spanEl.textContent = "We're sorry, but you've reached the end of search results.";
+    return;
+  }
 
-    try {
-      const data = await fetchGalleryPhoto(searchQuery, currentPage);
-             
-      
-      if (currentPage === 1) {
-        Notiflix.Notify.success(`Hooray! We found ${data.data.totalHits} images.`);
-      }
-      
-      if (currentPage === Math.floor(data.data.totalHits / Per_Page) || (data.data.hits.length < 40)) {
-               
-        observer.unobserve(target);
-
-        spanEl.textContent = "We're sorry, but you've reached the end of search results";
- 
-      }
-
-      currentPage += 1;
-        
-      addMarkup(galleryEl, createMarkup(data.data.hits));
-      lightbox.refresh();
-       
-    }
-
-    catch (err) {
-      Notiflix.Report.failure('Error', 'Sorry, there are no images matching your search query. Please try again', 'Ok')
+  try {
+    const data = await fetchGalleryPhoto(searchQuery, currentPage);
+    total = data.data.totalHits;
+    
+    if (currentPage === 1) {
+      Notiflix.Notify.success(`Hooray! We found ${total} images.`);
     }
     
-};  
-   
- 
-function addMarkup(element, markup) {
-  
-  element.insertAdjacentHTML("beforeend", markup); 
+    currentPage += 1;
+    addMarkup(galleryEl, createMarkup(data.data.hits));
+    lightbox.refresh();
 
+    if (data.data.hits.length < Per_Page || currentPage > Math.ceil(total / Per_Page)) {
+      observer.unobserve(target);
+      spanEl.textContent = "We're sorry, but you've reached the end of search results.";
+    }
+
+  } catch (err) {
+    Notiflix.Report.failure('Error', 'Sorry, there are no images matching your search query. Please try again', 'Ok');
+  }
+};
+
+function addMarkup(element, markup) {
+  element.insertAdjacentHTML("beforeend", markup);
 };
